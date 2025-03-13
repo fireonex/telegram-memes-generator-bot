@@ -1,8 +1,35 @@
 import sharp from 'sharp';
 
+const splitTextIntoLines = (text: string, maxLineLength: number): string[] => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    words.forEach((word) => {
+        if ((currentLine + word).length > maxLineLength) {
+            lines.push(currentLine.trim());
+            currentLine = '';
+        }
+        currentLine += `${word} `;
+    });
+
+    if (currentLine.trim()) {
+        lines.push(currentLine.trim());
+    }
+
+    return lines;
+};
+
 export const addTextToImage = async (imageBuffer: Buffer, text: string): Promise<Buffer> => {
+    const maxLineLength = 20;
+    const lines = splitTextIntoLines(text, maxLineLength);
+
+    const lineHeight = 70;
+    const paddingBottom = 20;
+    const svgHeight = lines.length * lineHeight + paddingBottom;
+
     const svgText = `
-    <svg width="800" height="200">
+    <svg width="800" height="${svgHeight}">
       <style>
         .title {
           fill: white;
@@ -10,11 +37,17 @@ export const addTextToImage = async (imageBuffer: Buffer, text: string): Promise
           font-family: Impact, Arial Black, sans-serif;
           font-weight: bold;
           stroke: black;
-          stroke-width: 3px;
+          stroke-width: 6px;
           paint-order: stroke fill;
         }
       </style>
-      <text x="50%" y="80%" text-anchor="middle" class="title">${text}</text>
+      ${lines
+        .map(
+            (line, index) => `
+        <text x="50%" y="${(index + 1) * lineHeight}" text-anchor="middle" class="title">${line}</text>
+      `
+        )
+        .join('')}
     </svg>
   `;
 
