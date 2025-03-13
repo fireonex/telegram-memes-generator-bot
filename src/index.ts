@@ -13,45 +13,66 @@ const port = 3003;
 
 const token = process.env.TELEGRAM_TOKEN;
 assert(token, 'TELEGRAM_TOKEN не найден в .env файле');
+
 const bot = new TelegramBot(token, {polling: true});
 
+const userSessions = new Map<number, { step: string, query?: string, memeText?: string }>();
 
-bot.onText(/\/meme (.+) (.+)/, async (msg, match) => {
+bot.onText(/\/meme/, (msg) => {
     const chatId = msg.chat.id;
-    const memeText = match ? match[1] : 'Мем';
-    const query = match ? match[2] : 'nature';
 
-    try {
-        const photoUrl = await searchPhoto(query);
+    const options = {
+        reply_markup: {
+            inline_keyboard: [
+                [{text: "Создать мем", callback_data: "create_meme"}]
+            ]
+        }
+    };
 
-        const response = await fetch(photoUrl);
-        const buffer = await response.arrayBuffer();
+    bot.sendMessage(chatId, "Нажми кнопку ниже, чтобы создать мем🧙", options);
+});
 
-        const outputImage = await addTextToImage(Buffer.from(buffer), memeText);
+bot.on("callback_query", (query) => {
+    const chatId = query.message?.chat.id;
+    if (!chatId) return;
 
-        bot.sendPhoto(chatId, outputImage);
-    } catch (error) {
-        console.error(error);
-        bot.sendMessage(chatId, 'Произошла ошибка при создании мема.');
+    if (query.data === "create_meme") {
+        userSessions.set(chatId, {step: "awaiting_photo_description"});
+        bot.sendMessage(chatId, "Что должно быть на фото? Лучше пиши на английском)");
     }
 });
 
-bot.onText(/\/photo (.+)/, async (msg, match) => {
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const query = match ? match[1] : 'nature';
-    try {
-        const photoUrl = await searchPhoto(query);
-        bot.sendPhoto(chatId, photoUrl);
-    } catch (error) {
-        console.error(error);
-        bot.sendMessage(chatId, 'Произошла ошибка при поиске фотографии.');
+    if (!userSessions.has(chatId)) return;
+
+    const session = userSessions.get(chatId);
+
+    if (session?.step === "awaiting_photo_description") {
+        session.query = msg.text || "nature";
+        session.step = "awaiting_caption";
+        bot.sendMessage(chatId, "Придумай подпись для мема");
+    } else if (session?.step === "awaiting_caption") {
+        session.memeText = msg.text || "meme";
+        session.step = "creating_meme";
+
+        try {
+            const photoUrl = await searchPhoto(session.query ?? "nature");
+
+
+            const response = await fetch(photoUrl);
+            const buffer = await response.arrayBuffer();
+
+            const outputImage = await addTextToImage(Buffer.from(buffer), session.memeText);
+
+            bot.sendPhoto(chatId, outputImage);
+        } catch (error) {
+            console.error(error);
+            bot.sendMessage(chatId, 'Произошла ошибка при создании мема');
+        }
+
+        userSessions.delete(chatId);
     }
-});
-
-
-bot.onText(/\/hello/, (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, 'Hello my friend!');
 });
 
 app.get('/', (req, res) => {
